@@ -1,0 +1,152 @@
+name: Build and Deploy to ECR
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write   # Required for OIDC token request
+  contents: read    # Required to checkout the repository
+
+env:
+  AWS_REGION: eu-central-1
+  ECR_REPOSITORY: ecs-cicd-app
+  INFRA_STACK_NAME: ecs-cicd-master
+  PROJECT_NAME: ecs-cicd
+
+jobs:
+  build-and-push:
+    name: Build Image and Push to ECR
+    runs-on: ubuntu-latest
+
+    outputs:
+      image_uri: ${{ steps.build-push.outputs.image_uri }}
+
+    steps:
+      - name: Checkout application code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      - name: Build JAR with Maven
+        run: mvn clean package -DskipTests -q
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          # Token duration — short-lived, matching the OIDC security model
+          role-session-name: github-actions-ecs-cicd
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push Docker image to ECR
+        id: build-push
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+
+          docker build \
+            --tag "${IMAGE_URI}" \
+            --label "git-commit=${IMAGE_TAG}" \
+            --label "git-repo=${{ github.repository }}" \
+            --label "built-by=github-actions" \
+            .
+
+          docker push "${IMAGE_URI}"
+
+          echo "image_uri=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
+          echo "Pushed: ${IMAGE_URI}"
+
+      - name: Upload deploy bundle to S3
+        env:
+          IMAGE_URI: ${{ steps.build-push.outputs.image_uri }}
+        run: |
+          # Resolve infrastructure stack outputs
+          ARTIFACT_BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name "${INFRA_STACK_NAME}" \
+            --region "${AWS_REGION}" \
+            --query 'Stacks[0].Outputs[?OutputKey==`ArtifactBucketName`].OutputValue' \
+            --output text)
+
+          TASK_EXEC_ROLE=$(aws iam get-role \
+            --role-name "${PROJECT_NAME}-task-execution-role" \
+            --query 'Role.Arn' \
+            --output text)
+
+          echo "Artifact bucket:    ${ARTIFACT_BUCKET}"
+          echo "Task exec role:     ${TASK_EXEC_ROLE}"
+          echo "Image URI:          ${IMAGE_URI}"
+
+          # imageDetail.json — CodePipeline CodeDeployToECS action reads this to
+          # get the actual image URI and replaces <IMAGE1_NAME> in taskdef.json.
+          cat > imageDetail.json << EOF
+          {"ImageURI": "${IMAGE_URI}"}
+          EOF
+
+          # taskdef.json — task definition template; <IMAGE1_NAME> is replaced at
+          # deploy time by CodePipeline using imageDetail.json above.
+          cat > taskdef.json << EOF
+          {
+            "family": "${PROJECT_NAME}-app",
+            "networkMode": "awsvpc",
+            "requiresCompatibilities": ["FARGATE"],
+            "cpu": "256",
+            "memory": "512",
+            "executionRoleArn": "${TASK_EXEC_ROLE}",
+            "containerDefinitions": [
+              {
+                "name": "app",
+                "image": "<IMAGE1_NAME>",
+                "essential": true,
+                "portMappings": [
+                  {
+                    "containerPort": 8080,
+                    "protocol": "tcp"
+                  }
+                ],
+                "logConfiguration": {
+                  "logDriver": "awslogs",
+                  "options": {
+                    "awslogs-group": "/ecs/${PROJECT_NAME}",
+                    "awslogs-region": "${AWS_REGION}",
+                    "awslogs-stream-prefix": "app"
+                  }
+                },
+                "healthCheck": {
+                  "command": ["CMD-SHELL", "curl -f http://localhost:8080/ || exit 1"],
+                  "interval": 30,
+                  "timeout": 5,
+                  "retries": 3,
+                  "startPeriod": 60
+                }
+              }
+            ]
+          }
+          EOF
+
+          # Bundle all three files — CodePipeline unpacks this as the S3 source artifact
+          zip -q deploy-bundle.zip appspec.yaml taskdef.json imageDetail.json
+
+          aws s3 cp deploy-bundle.zip \
+            "s3://${ARTIFACT_BUCKET}/deploy/deploy-bundle.zip" \
+            --region "${AWS_REGION}" \
+            --sse AES256
+
+          echo ""
+          echo "Deploy bundle (appspec + taskdef + imageDetail) uploaded to:"
+          echo "  s3://${ARTIFACT_BUCKET}/deploy/deploy-bundle.zip"
+          echo ""
+          echo "EventBridge (ECR push event) will trigger CodePipeline →"
+          echo "CodeDeploy Blue/Green → ECS service update."
