@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ECS CI/CD Lab</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            color: #fff;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 16px;
+            padding: 3rem 4rem;
+            text-align: center;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            max-width: 480px;
+            width: 90%;
+        }
+
+        .badge {
+            display: inline-block;
+            background: #ff9900;
+            color: #111;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            padding: 0.3rem 0.8rem;
+            border-radius: 999px;
+            margin-bottom: 1.5rem;
+        }
+
+        h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            margin-bottom: 0.4rem;
+            letter-spacing: -0.02em;
+        }
+
+        .subtitle {
+            font-size: 1rem;
+            color: rgba(255, 255, 255, 0.6);
+            margin-bottom: 2.5rem;
+        }
+
+        .info-grid {
+            display: grid;
+            gap: 1rem;
+        }
+
+        .info-row {
+            display: flex;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 1rem 1.25rem;
+            text-align: left;
+        }
+
+        .info-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #ff9900;
+            width: 3.5rem;
+            flex-shrink: 0;
+        }
+
+        .info-value {
+            font-size: 1.05rem;
+            font-weight: 500;
+        }
+
+        footer {
+            margin-top: 2rem;
+            font-size: 0.72rem;
+            color: rgba(255, 255, 255, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <span class="badge">AWS ECS Fargate</span>
+        <h1>Hello from ECS!</h1>
+        <p class="subtitle">Running on Amazon ECS with blue/green deployments</p>
+
+        <div class="info-grid">
+            <div class="info-row">
+                <span class="info-label">Name</span>
+                <span class="info-value" th:text="${name}">Eugene Anokye</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Lab</span>
+                <span class="info-value" th:text="${lab}">ECS CI/CD</span>
+            </div>
+        </div>
+
+        <footer>Deployed via GitHub Actions &rarr; Amazon ECR &rarr; CodePipeline &rarr; CodeDeploy</footer>
+    </div>
+</body>
+</html>
