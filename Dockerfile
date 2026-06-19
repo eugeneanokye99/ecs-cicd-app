@@ -1,6 +1,8 @@
 # ── Build stage ──────────────────────────────────────────────────────────────
-FROM maven:3.9-eclipse-temurin-21-alpine AS build
+FROM amazoncorretto:21-al2023-jdk AS build
 WORKDIR /app
+
+RUN yum install -y maven && yum clean all
 
 # Copy POM first so dependency layer is cached separately from source
 COPY pom.xml .
@@ -10,11 +12,11 @@ COPY src ./src
 RUN mvn clean package -DskipTests -q
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
-FROM eclipse-temurin:21-jre-alpine
+FROM amazoncorretto:21-al2023
 WORKDIR /app
 
 # Non-root user for least-privilege container execution
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+RUN useradd -r -s /sbin/nologin appuser
 USER appuser
 
 COPY --from=build /app/target/*.jar app.jar
