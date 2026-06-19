@@ -137,16 +137,16 @@ jobs:
           EOF
 
           # Bundle all three files — CodePipeline unpacks this as the S3 source artifact
-          zip -q deploy-bundle.zip appspec.yaml taskdef.json imageDetail.json
+          mkdir -p deploy
+          zip -q deploy/deploy-bundle.zip appspec.yaml taskdef.json imageDetail.json
 
-          aws s3 cp deploy-bundle.zip \
-            "s3://${ARTIFACT_BUCKET}/deploy/deploy-bundle.zip" \
+          aws s3 sync deploy/ \
+            "s3://${ARTIFACT_BUCKET}/deploy/" \
             --region "${AWS_REGION}" \
-            --sse AES256
+            --sse AES256 \
+            --delete
 
           echo ""
-          echo "Deploy bundle (appspec + taskdef + imageDetail) uploaded to:"
-          echo "  s3://${ARTIFACT_BUCKET}/deploy/deploy-bundle.zip"
-          echo ""
+          echo "Deploy bundle synced to s3://${ARTIFACT_BUCKET}/deploy/"
           echo "EventBridge (ECR push event) will trigger CodePipeline →"
           echo "CodeDeploy Blue/Green → ECS service update."
