@@ -1,8 +1,7 @@
 # ── Build stage ──────────────────────────────────────────────────────────────
-FROM amazoncorretto:21-al2023-jdk AS build
+# Official Maven image with Amazon Corretto 21 — no manual Maven install needed
+FROM maven:3.9-amazoncorretto-21 AS build
 WORKDIR /app
-
-RUN yum install -y maven && yum clean all
 
 # Copy POM first so dependency layer is cached separately from source
 COPY pom.xml .
@@ -15,8 +14,11 @@ RUN mvn clean package -DskipTests -q
 FROM amazoncorretto:21-al2023
 WORKDIR /app
 
-# Non-root user for least-privilege container execution
-RUN useradd -r -s /sbin/nologin appuser
+# shadow-utils provides useradd on Amazon Linux 2023
+RUN yum install -y shadow-utils && \
+    useradd -r -s /sbin/nologin appuser && \
+    yum clean all -y
+
 USER appuser
 
 COPY --from=build /app/target/*.jar app.jar
