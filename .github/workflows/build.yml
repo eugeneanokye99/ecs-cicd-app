@@ -10,7 +10,7 @@ permissions:
   contents: read    # Required to checkout the repository
 
 env:
-  INFRA_STACK_NAME: ecs-cicd-master
+  INFRA_STACK_NAME: ecs-cicd-stack
   PROJECT_NAME: ecs-cicd
 
 jobs:
