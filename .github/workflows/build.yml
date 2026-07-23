@@ -43,7 +43,7 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, tag, and push Docker image to ECR
+      - name: Build and push SHA-tagged image to ECR
         id: build-push
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -51,7 +51,6 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           SHA_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
-          LATEST_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
 
           docker build \
             --tag "${SHA_URI}" \
@@ -61,16 +60,15 @@ jobs:
             .
 
           # Immutable, traceable tag — this is the exact image CodeDeploy deploys.
+          # Deliberately NOT pushing :latest here — that happens only after the S3
+          # deploy bundle is uploaded below, since :latest is what triggers
+          # EventBridge -> CodePipeline, and the pipeline needs the bundle to
+          # already exist in S3 the moment it starts (otherwise its Source stage
+          # fails with a "Forbidden" error fetching a not-yet-uploaded object).
           docker push "${SHA_URI}"
 
-          # Also tag+push :latest — EventBridge's EcrPushRule filters specifically
-          # on this tag to trigger CodePipeline. The deployment itself still uses
-          # the SHA-pinned image via imageDetail.json below, not this tag.
-          docker tag "${SHA_URI}" "${LATEST_URI}"
-          docker push "${LATEST_URI}"
-
           echo "sha_image_uri=${SHA_URI}" >> "${GITHUB_OUTPUT}"
-          echo "Pushed: ${SHA_URI} and ${LATEST_URI}"
+          echo "Pushed: ${SHA_URI}"
 
       - name: Assemble and upload deploy bundle to S3
         env:
@@ -157,5 +155,21 @@ jobs:
 
           echo ""
           echo "Deploy bundle uploaded to s3://${ARTIFACT_BUCKET}/${ENVIRONMENT}/deploy-artifacts.zip"
+
+      - name: Tag and push :latest to trigger the pipeline
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ env.PROJECT_NAME }}-app
+          SHA_URI: ${{ steps.build-push.outputs.sha_image_uri }}
+        run: |
+          LATEST_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
+
+          # The S3 deploy bundle is already uploaded at this point, so
+          # EventBridge's EcrPushRule firing on this push is safe — CodePipeline's
+          # Source stage will find the object waiting for it.
+          docker tag "${SHA_URI}" "${LATEST_URI}"
+          docker push "${LATEST_URI}"
+
+          echo "Pushed: ${LATEST_URI}"
           echo "EventBridge (ECR :latest push event) will trigger CodePipeline ->"
           echo "CodeDeploy Blue/Green -> ECS service update."
