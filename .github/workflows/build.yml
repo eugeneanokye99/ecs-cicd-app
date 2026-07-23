@@ -10,16 +10,13 @@ permissions:
   contents: read    # Required to checkout the repository
 
 env:
-  INFRA_STACK_NAME: ecs-cicd-stack
-  PROJECT_NAME: ecs-cicd
+  ENVIRONMENT: prod
+  PROJECT_NAME: bem13
 
 jobs:
   build-and-push:
     name: Build Image and Push to ECR
     runs-on: ubuntu-latest
-
-    outputs:
-      image_uri: ${{ steps.build-push.outputs.image_uri }}
 
     steps:
       - name: Checkout application code
@@ -40,8 +37,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
-          # Token duration — short-lived, matching the OIDC security model
-          role-session-name: github-actions-ecs-cicd
+          role-session-name: github-actions-bem13-app
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -51,60 +47,72 @@ jobs:
         id: build-push
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          ECR_REPOSITORY: ${{ env.PROJECT_NAME }}-app
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          SHA_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          LATEST_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
 
           docker build \
-            --tag "${IMAGE_URI}" \
+            --tag "${SHA_URI}" \
             --label "git-commit=${IMAGE_TAG}" \
             --label "git-repo=${{ github.repository }}" \
             --label "built-by=github-actions" \
             .
 
-          docker push "${IMAGE_URI}"
+          # Immutable, traceable tag — this is the exact image CodeDeploy deploys.
+          docker push "${SHA_URI}"
 
-          echo "image_uri=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
-          echo "Pushed: ${IMAGE_URI}"
+          # Also tag+push :latest — EventBridge's EcrPushRule filters specifically
+          # on this tag to trigger CodePipeline. The deployment itself still uses
+          # the SHA-pinned image via imageDetail.json below, not this tag.
+          docker tag "${SHA_URI}" "${LATEST_URI}"
+          docker push "${LATEST_URI}"
 
-      - name: Upload deploy bundle to S3
+          echo "sha_image_uri=${SHA_URI}" >> "${GITHUB_OUTPUT}"
+          echo "Pushed: ${SHA_URI} and ${LATEST_URI}"
+
+      - name: Assemble and upload deploy bundle to S3
         env:
-          IMAGE_URI: ${{ steps.build-push.outputs.image_uri }}
+          IMAGE_URI: ${{ steps.build-push.outputs.sha_image_uri }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
-          # Resolve infrastructure stack outputs
-          ARTIFACT_BUCKET=$(aws cloudformation describe-stacks \
-            --stack-name "${INFRA_STACK_NAME}" \
-            --region "${AWS_REGION}" \
-            --query 'Stacks[0].Outputs[?OutputKey==`ArtifactBucketName`].OutputValue' \
-            --output text)
+          SSM_PREFIX="/${PROJECT_NAME}/${ENVIRONMENT}"
 
-          TASK_EXEC_ROLE=$(aws iam get-role \
-            --role-name "${PROJECT_NAME}-task-execution-role" \
-            --query 'Role.Arn' \
-            --output text)
+          ARTIFACT_BUCKET=$(aws ssm get-parameter \
+            --name "${SSM_PREFIX}/artifact-bucket-name" \
+            --query 'Parameter.Value' --output text)
+
+          TASK_EXEC_ROLE=$(aws ssm get-parameter \
+            --name "${SSM_PREFIX}/task-execution-role-arn" \
+            --query 'Parameter.Value' --output text)
+
+          TASK_ROLE=$(aws ssm get-parameter \
+            --name "${SSM_PREFIX}/task-role-arn" \
+            --query 'Parameter.Value' --output text)
 
           echo "Artifact bucket:    ${ARTIFACT_BUCKET}"
           echo "Task exec role:     ${TASK_EXEC_ROLE}"
+          echo "Task role:          ${TASK_ROLE}"
           echo "Image URI:          ${IMAGE_URI}"
 
-          # imageDetail.json — CodePipeline CodeDeployToECS action reads this to
-          # get the actual image URI and replaces <IMAGE1_NAME> in taskdef.json.
+          # imageDetail.json — CodePipeline's CodeDeployToECS action reads this
+          # to resolve the real image and substitute <IMAGE1_NAME> in taskdef.json.
           cat > imageDetail.json << EOF
           {"ImageURI": "${IMAGE_URI}"}
           EOF
 
-          # taskdef.json — task definition template; <IMAGE1_NAME> is replaced at
-          # deploy time by CodePipeline using imageDetail.json above.
+          # taskdef.json — new revision registered under the same family as the
+          # CloudFormation-managed task definition (templates/ecs.yaml).
           cat > taskdef.json << EOF
           {
-            "family": "${PROJECT_NAME}-app",
+            "family": "${ENVIRONMENT}-${PROJECT_NAME}-task",
             "networkMode": "awsvpc",
             "requiresCompatibilities": ["FARGATE"],
-            "cpu": "256",
-            "memory": "512",
+            "cpu": "1024",
+            "memory": "2048",
             "executionRoleArn": "${TASK_EXEC_ROLE}",
+            "taskRoleArn": "${TASK_ROLE}",
             "containerDefinitions": [
               {
                 "name": "app",
@@ -116,12 +124,15 @@ jobs:
                     "protocol": "tcp"
                   }
                 ],
+                "environment": [
+                  {"name": "SPRING_PROFILES_ACTIVE", "value": "${ENVIRONMENT}"}
+                ],
                 "logConfiguration": {
                   "logDriver": "awslogs",
                   "options": {
-                    "awslogs-group": "/ecs/${PROJECT_NAME}",
+                    "awslogs-group": "/ecs/${ENVIRONMENT}-${PROJECT_NAME}",
                     "awslogs-region": "${AWS_REGION}",
-                    "awslogs-stream-prefix": "app"
+                    "awslogs-stream-prefix": "ecs"
                   }
                 },
                 "healthCheck": {
@@ -136,17 +147,15 @@ jobs:
           }
           EOF
 
-          # Bundle all three files — CodePipeline unpacks this as the S3 source artifact
-          mkdir -p deploy
-          zip -q deploy/deploy-bundle.zip appspec.yaml taskdef.json imageDetail.json
+          # Bundle all three files exactly as pipeline.yaml's Source stage expects:
+          # a single object at <Environment>/deploy-artifacts.zip (not a folder sync).
+          zip -q deploy-artifacts.zip appspec.yaml taskdef.json imageDetail.json
 
-          aws s3 sync deploy/ \
-            "s3://${ARTIFACT_BUCKET}/deploy/" \
-            --region "${AWS_REGION}" \
-            --sse AES256 \
-            --delete
+          aws s3 cp deploy-artifacts.zip \
+            "s3://${ARTIFACT_BUCKET}/${ENVIRONMENT}/deploy-artifacts.zip" \
+            --sse AES256
 
           echo ""
-          echo "Deploy bundle synced to s3://${ARTIFACT_BUCKET}/deploy/"
-          echo "EventBridge (ECR push event) will trigger CodePipeline →"
-          echo "CodeDeploy Blue/Green → ECS service update."
+          echo "Deploy bundle uploaded to s3://${ARTIFACT_BUCKET}/${ENVIRONMENT}/deploy-artifacts.zip"
+          echo "EventBridge (ECR :latest push event) will trigger CodePipeline ->"
+          echo "CodeDeploy Blue/Green -> ECS service update."

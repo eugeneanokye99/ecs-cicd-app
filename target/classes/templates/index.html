@@ -3,112 +3,318 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ECS CI/CD Lab</title>
+    <title>ECS CI/CD Lab — BEM13</title>
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             min-height: 100vh;
+            background: #0a0e1a;
+            background-image:
+                radial-gradient(ellipse 80% 50% at 20% 0%, rgba(255, 153, 0, 0.08) 0%, transparent 60%),
+                radial-gradient(ellipse 60% 40% at 80% 100%, rgba(35, 100, 180, 0.1) 0%, transparent 60%);
+            color: #e6edf3;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
-            color: #fff;
+            padding: 2rem 1rem;
         }
 
-        .card {
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.15);
+        .page {
+            width: 100%;
+            max-width: 780px;
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+
+        /* ── Header card ── */
+        .header-card {
+            background: linear-gradient(135deg, rgba(255,153,0,0.12), rgba(255,153,0,0.04));
+            border: 1px solid rgba(255, 153, 0, 0.25);
             border-radius: 16px;
-            padding: 3rem 4rem;
-            text-align: center;
-            backdrop-filter: blur(12px);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-            max-width: 480px;
-            width: 90%;
+            padding: 2.5rem 2.5rem 2rem;
+            position: relative;
+            overflow: hidden;
+        }
+        .header-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at top right, rgba(255,153,0,0.06), transparent 60%);
+            pointer-events: none;
+        }
+
+        .top-row {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.25rem;
         }
 
         .badge {
-            display: inline-block;
-            background: #ff9900;
-            color: #111;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            background: rgba(255, 153, 0, 0.15);
+            border: 1px solid rgba(255, 153, 0, 0.4);
+            color: #ff9900;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            padding: 0.3rem 0.75rem;
+            border-radius: 999px;
+        }
+        .badge-dot {
+            width: 6px; height: 6px;
+            background: #3fb950;
+            border-radius: 50%;
+            box-shadow: 0 0 6px #3fb950;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0.4; }
+        }
+
+        .status-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            background: rgba(63, 185, 80, 0.1);
+            border: 1px solid rgba(63, 185, 80, 0.3);
+            color: #3fb950;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            padding: 0.3rem 0.75rem;
+            border-radius: 999px;
+        }
+
+        h1 {
+            font-size: 2.4rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+            margin-bottom: 0.5rem;
+        }
+        h1 .name { color: #ff9900; }
+
+        .subtitle {
+            font-size: 0.95rem;
+            color: rgba(230, 237, 243, 0.5);
+            line-height: 1.5;
+        }
+
+        /* ── Info grid ── */
+        .section-card {
+            background: rgba(22, 27, 34, 0.9);
+            border: 1px solid rgba(48, 54, 61, 0.8);
+            border-radius: 14px;
+            padding: 1.75rem 2rem;
+        }
+
+        .section-title {
             font-size: 0.7rem;
             font-weight: 700;
             letter-spacing: 0.12em;
             text-transform: uppercase;
-            padding: 0.3rem 0.8rem;
-            border-radius: 999px;
-            margin-bottom: 1.5rem;
-        }
-
-        h1 {
-            font-size: 2.2rem;
-            font-weight: 700;
-            margin-bottom: 0.4rem;
-            letter-spacing: -0.02em;
-        }
-
-        .subtitle {
-            font-size: 1rem;
-            color: rgba(255, 255, 255, 0.6);
-            margin-bottom: 2.5rem;
+            color: rgba(230, 237, 243, 0.35);
+            margin-bottom: 1.25rem;
         }
 
         .info-grid {
             display: grid;
-            gap: 1rem;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.875rem;
+        }
+        @media (max-width: 520px) { .info-grid { grid-template-columns: 1fr; } }
+
+        .info-item {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 10px;
+            padding: 0.875rem 1rem;
+        }
+        .info-item-label {
+            font-size: 0.68rem;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: rgba(230, 237, 243, 0.4);
+            margin-bottom: 0.3rem;
+        }
+        .info-item-value {
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: #e6edf3;
+        }
+        .info-item-value.highlight { color: #ff9900; }
+        .info-item-value.mono {
+            font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+            font-size: 0.82rem;
+            color: #79c0ff;
         }
 
-        .info-row {
+        /* ── Pipeline ── */
+        .pipeline-flow {
             display: flex;
             align-items: center;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 10px;
-            padding: 1rem 1.25rem;
-            text-align: left;
+            gap: 0;
+            overflow-x: auto;
+            padding-bottom: 0.25rem;
         }
 
-        .info-label {
-            font-size: 0.75rem;
-            font-weight: 600;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            color: #ff9900;
-            width: 3.5rem;
+        .stage {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
             flex-shrink: 0;
         }
+        .stage-icon {
+            width: 42px; height: 42px;
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.2rem;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .stage-icon.orange { background: rgba(255,153,0,0.12); border-color: rgba(255,153,0,0.25); }
+        .stage-icon.blue   { background: rgba(88,166,255,0.1);  border-color: rgba(88,166,255,0.25); }
+        .stage-icon.green  { background: rgba(63,185,80,0.1);   border-color: rgba(63,185,80,0.25); }
+        .stage-icon.purple { background: rgba(188,140,255,0.1); border-color: rgba(188,140,255,0.25); }
+        .stage-icon.teal   { background: rgba(56,189,248,0.1);  border-color: rgba(56,189,248,0.25); }
 
-        .info-value {
-            font-size: 1.05rem;
-            font-weight: 500;
+        .stage-label {
+            font-size: 0.68rem;
+            font-weight: 600;
+            color: rgba(230,237,243,0.55);
+            text-align: center;
+            max-width: 72px;
+            line-height: 1.3;
         }
 
-        footer {
-            margin-top: 2rem;
+        .pipe-arrow {
+            flex: 1;
+            min-width: 20px;
+            height: 2px;
+            background: linear-gradient(90deg, rgba(255,153,0,0.3), rgba(88,166,255,0.3));
+            position: relative;
+            margin: 0 4px;
+            margin-bottom: 22px;
+        }
+        .pipe-arrow::after {
+            content: '';
+            position: absolute;
+            right: -1px; top: -3px;
+            border: 4px solid transparent;
+            border-left: 6px solid rgba(88,166,255,0.5);
+        }
+
+        /* ── Runtime footer ── */
+        .runtime-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            padding: 0.875rem 1.25rem;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 10px;
             font-size: 0.72rem;
-            color: rgba(255, 255, 255, 0.3);
+            color: rgba(230,237,243,0.3);
+            font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
         }
+        .runtime-bar span { display: flex; align-items: center; gap: 0.4rem; }
+        .dot { width: 5px; height: 5px; background: rgba(63,185,80,0.6); border-radius: 50%; }
     </style>
 </head>
 <body>
-    <div class="card">
-        <span class="badge">AWS ECS Fargate</span>
-        <h1>Hello from ECS!</h1>
-        <p class="subtitle">Running on Amazon ECS with blue/green deployments</p>
+    <div class="page">
 
-        <div class="info-grid">
-            <div class="info-row">
-                <span class="info-label">Name</span>
-                <span class="info-value" th:text="${name}">Eugene Anokye</span>
+        <!-- Header -->
+        <div class="header-card">
+            <div class="top-row">
+                <span class="badge"><span class="badge-dot"></span>AWS ECS Fargate</span>
+                <span class="status-chip">&#10003; Healthy</span>
             </div>
-            <div class="info-row">
-                <span class="info-label">Lab</span>
-                <span class="info-value" th:text="${lab}">ECS CI/CD</span>
+            <h1>Hello, <span class="name" th:text="${name}">Eugene Anokye</span>!</h1>
+            <p class="subtitle">Your containerised Spring Boot app is live on Amazon ECS Fargate,<br>deployed with zero-downtime blue/green releases via AWS CodeDeploy.</p>
+        </div>
+
+        <!-- Details -->
+        <div class="section-card">
+            <div class="section-title">Deployment Details</div>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-item-label">Developer</div>
+                    <div class="info-item-value highlight" th:text="${name}">Eugene Anokye</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-item-label">Lab</div>
+                    <div class="info-item-value" th:text="${lab}">ECS CI/CD Lab – BEM13</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-item-label">Environment</div>
+                    <div class="info-item-value" th:text="${environment}">Production</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-item-label">Platform</div>
+                    <div class="info-item-value" th:text="${platform}">Amazon ECS Fargate</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-item-label">Deployment Strategy</div>
+                    <div class="info-item-value" th:text="${deployment}">Blue/Green via CodeDeploy</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-item-label">Runtime</div>
+                    <div class="info-item-value" th:text="${javaVersion}">Java 21</div>
+                </div>
             </div>
         </div>
 
-        <footer>Deployed via GitHub Actions &rarr; Amazon ECR &rarr; CodePipeline &rarr; CodeDeploy</footer>
+        <!-- Pipeline -->
+        <div class="section-card">
+            <div class="section-title">CI/CD Pipeline</div>
+            <div class="pipeline-flow">
+                <div class="stage">
+                    <div class="stage-icon orange">&#128296;</div>
+                    <div class="stage-label">GitHub Actions</div>
+                </div>
+                <div class="pipe-arrow"></div>
+                <div class="stage">
+                    <div class="stage-icon blue">&#128230;</div>
+                    <div class="stage-label">Amazon ECR</div>
+                </div>
+                <div class="pipe-arrow"></div>
+                <div class="stage">
+                    <div class="stage-icon purple">&#128640;</div>
+                    <div class="stage-label">CodePipeline</div>
+                </div>
+                <div class="pipe-arrow"></div>
+                <div class="stage">
+                    <div class="stage-icon teal">&#128260;</div>
+                    <div class="stage-label">CodeDeploy B/G</div>
+                </div>
+                <div class="pipe-arrow"></div>
+                <div class="stage">
+                    <div class="stage-icon green">&#9989;</div>
+                    <div class="stage-label">ECS Fargate</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Runtime bar -->
+        <div class="runtime-bar">
+            <span><span class="dot"></span>Container: <span th:text="${hostname}">hostname</span></span>
+            <span>Server time: <span th:text="${serverTime}">2026-01-01 00:00:00 UTC</span></span>
+        </div>
+
     </div>
 </body>
 </html>
