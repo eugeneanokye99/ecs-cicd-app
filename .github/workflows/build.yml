@@ -101,7 +101,7 @@ jobs:
             --query 'taskDefinition' \
             --output json \
           | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
-                | (.containerDefinitions[] | select(.name == "app") | .image) = "<IMAGE1_NAME>"' \
+                | .containerDefinitions |= map(if .name == "app" then .image = "<IMAGE1_NAME>" else . end)' \
           > taskdef.json
 
           echo "Resolved task definition:"
