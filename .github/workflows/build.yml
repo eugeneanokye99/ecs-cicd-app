@@ -73,25 +73,15 @@ jobs:
       - name: Assemble and upload deploy bundle to S3
         env:
           IMAGE_URI: ${{ steps.build-push.outputs.sha_image_uri }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
           SSM_PREFIX="/${PROJECT_NAME}/${ENVIRONMENT}"
+          TASK_FAMILY="${ENVIRONMENT}-${PROJECT_NAME}-task"
 
           ARTIFACT_BUCKET=$(aws ssm get-parameter \
             --name "${SSM_PREFIX}/artifact-bucket-name" \
             --query 'Parameter.Value' --output text)
 
-          TASK_EXEC_ROLE=$(aws ssm get-parameter \
-            --name "${SSM_PREFIX}/task-execution-role-arn" \
-            --query 'Parameter.Value' --output text)
-
-          TASK_ROLE=$(aws ssm get-parameter \
-            --name "${SSM_PREFIX}/task-role-arn" \
-            --query 'Parameter.Value' --output text)
-
           echo "Artifact bucket:    ${ARTIFACT_BUCKET}"
-          echo "Task exec role:     ${TASK_EXEC_ROLE}"
-          echo "Task role:          ${TASK_ROLE}"
           echo "Image URI:          ${IMAGE_URI}"
 
           # imageDetail.json — CodePipeline's CodeDeployToECS action reads this
@@ -100,50 +90,22 @@ jobs:
           {"ImageURI": "${IMAGE_URI}"}
           EOF
 
-          # taskdef.json — new revision registered under the same family as the
-          # CloudFormation-managed task definition (templates/ecs.yaml).
-          cat > taskdef.json << EOF
-          {
-            "family": "${ENVIRONMENT}-${PROJECT_NAME}-task",
-            "networkMode": "awsvpc",
-            "requiresCompatibilities": ["FARGATE"],
-            "cpu": "1024",
-            "memory": "2048",
-            "executionRoleArn": "${TASK_EXEC_ROLE}",
-            "taskRoleArn": "${TASK_ROLE}",
-            "containerDefinitions": [
-              {
-                "name": "app",
-                "image": "<IMAGE1_NAME>",
-                "essential": true,
-                "portMappings": [
-                  {
-                    "containerPort": 8080,
-                    "protocol": "tcp"
-                  }
-                ],
-                "environment": [
-                  {"name": "SPRING_PROFILES_ACTIVE", "value": "${ENVIRONMENT}"}
-                ],
-                "logConfiguration": {
-                  "logDriver": "awslogs",
-                  "options": {
-                    "awslogs-group": "/ecs/${ENVIRONMENT}-${PROJECT_NAME}",
-                    "awslogs-region": "${AWS_REGION}",
-                    "awslogs-stream-prefix": "ecs"
-                  }
-                },
-                "healthCheck": {
-                  "command": ["CMD-SHELL", "curl -f http://localhost:8080/ || exit 1"],
-                  "interval": 30,
-                  "timeout": 5,
-                  "retries": 3,
-                  "startPeriod": 60
-                }
-              }
-            ]
-          }
-          EOF
+          # taskdef.json — start from the CURRENTLY REGISTERED task definition
+          # (the one templates/ecs.yaml created) instead of hand-writing a
+          # duplicate. This guarantees the container/role/logging structure
+          # always matches whatever CloudFormation actually deployed, and only
+          # the "app" container's image is swapped for the <IMAGE1_NAME>
+          # placeholder that CodeDeploy substitutes at deploy time.
+          aws ecs describe-task-definition \
+            --task-definition "${TASK_FAMILY}" \
+            --query 'taskDefinition' \
+            --output json \
+          | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
+                | (.containerDefinitions[] | select(.name == "app") | .image) = "<IMAGE1_NAME>"' \
+          > taskdef.json
+
+          echo "Resolved task definition:"
+          cat taskdef.json
 
           # Bundle all three files exactly as pipeline.yaml's Source stage expects:
           # a single object at <Environment>/deploy-artifacts.zip (not a folder sync).
