@@ -13,7 +13,7 @@ public class HomeController {
 
     @GetMapping("/")
     public String home(Model model) {
-        model.addAttribute("name", "Eugene Anokye");
+        model.addAttribute("name", "Eugeneeee Anokye");
         model.addAttribute("lab", "ECS CI/CD Lab – BEM13");
         model.addAttribute("environment", "Production");
         model.addAttribute("platform", "Amazon ECS Fargate");
