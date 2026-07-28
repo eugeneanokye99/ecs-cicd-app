@@ -59,12 +59,6 @@ jobs:
             --label "built-by=github-actions" \
             .
 
-          # Immutable, traceable tag — this is the exact image CodeDeploy deploys.
-          # Deliberately NOT pushing :latest here — that happens only after the S3
-          # deploy bundle is uploaded below, since :latest is what triggers
-          # EventBridge -> CodePipeline, and the pipeline needs the bundle to
-          # already exist in S3 the moment it starts (otherwise its Source stage
-          # fails with a "Forbidden" error fetching a not-yet-uploaded object).
           docker push "${SHA_URI}"
 
           echo "sha_image_uri=${SHA_URI}" >> "${GITHUB_OUTPUT}"
